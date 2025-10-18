@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Williams Performance Friction</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <!-- Header / Nav -->
+  <header class="header">
+    <nav class="navbar">
+      <div class="container">
+        <a class="brand" href="#home">WPF</a>
+        <ul class="nav-list">
+          <li class="nav-item"><a class="nav-link" href="#home">Home</a></li>
+          <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
+          <li class="nav-item"><a class="nav-link" href="#products">Products</a></li>
+          <li class="nav-item"><a class="nav-link" href="#technology">Technology</a></li>
+          <li class="nav-item"><a class="nav-link" href="#archive">Archive</a></li>
+          <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
+        </ul>
+      </div>
+    </nav>
+  </header>
+  <!-- Hero -->
+  <section id="home" class="section hero">
+    <div class="container text-center">
+      <h1>Where High-Performance Meets Sustainability</h1>
+      <p>The world's only 100% recyclable brake pads, proven in championship racing.</p>
+      <a class="btn" href="#products">Discover Our Products</a>
+    </div>
+  </section>
+  <!-- About -->
+  <section id="about" class="section">
+    <div class="container">
+      <h2 class="section-title text-center">About Us</h2>
+      <p>A third-generation family business established in 2002, leading brake pad innovation for over two decades. We manufacture the only known 100% recyclable brake pads—proving that high performance and environmental responsibility can coexist.</p>
+    </div>
+  </section>
+  <!-- Products -->
+  <section id="products" class="section alt">
+    <div class="container">
+      <h2 class="section-title text-center">Products</h2>
+      <div class="grid two">
+        <div>
+          <h3>Load &amp; Lock™ System (Patent Pending)</h3>
+          <ul class="checklist">
+            <li>Shoe stays on truck</li>
+            <li>Friction material is recyclable</li>
+            <li>Reduced costs &amp; increased uptime</li>
+            <li>Revolutionary swap system</li>
+          </ul>
+        </div>
+        <div>
+          <img src="{{ url_for('static', filename='images/load-lock.jpg') }}" alt="Load & Lock System" class="img-fluid">
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- Technology -->
+  <section id="technology" class="section">
+    <div class="container">
+      <h2 class="section-title text-center">Technology</h2>
+      <h3 class="text-center">100% Recyclable Brake Technology</h3>
+      <p class="text-center">The world's first and only completely recyclable brake pad system, engineered for maximum performance and environmental responsibility.</p>
+      <div class="grid two compare">
+        <div>
+          <h4>Traditional Brake Shoe</h4>
+          <ul>
+            <li>Complete replacement required</li>
+            <li>Metal backing plate wasted</li>
+            <li>Higher disposal costs</li>
+            <li>Environmental impact</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Load &amp; Lock™ System</h4>
+          <ul>
+            <li>Swap friction material only</li>
+            <li>Backing plate reused indefinitely</li>
+            <li>100% recyclable materials</li>
+            <li>Zero-waste technology</li>
+          </ul>
+        </div>
+      </div>
+      <div class="kpis text-center">
+        <div><strong>100%</strong><br/>Recyclable Materials</div>
+        <div><strong>0</strong><br/>Waste Generated</div>
+        <div><strong>∞</strong><br/>Backing Plate Reuse</div>
+      </div>
+    </div>
+  </section>
+  <!-- ARCHIVE -->
+  <section id="archive" class="section alt">
+    <div class="container">
+      <h2 class="section-title text-center">Company Archive</h2>
+      <p class="text-center">Selected records of performance friction development, competition, and milestones.</p>
+      <div class="grid three cards">
+        <div class="card">
+          <img src="{{ url_for('static', filename='images/racing-road.jpg') }}" alt="Road Racing" class="img-fluid">
+          <h4>Road Racing</h4>
+          <p>High-speed circuit competition.</p>
+        </div>
+        <div class="card">
+          <img src="{{ url_for('static', filename='images/racing-openwheel.jpg') }}" alt="Open-Wheel" class="img-fluid">
+          <h4>Open-Wheel</h4>
+          <p>Professional formula competition.</p>
+        </div>
+        <div class="card">
+          <img src="{{ url_for('static', filename='images/racing-autocross.jpg') }}" alt="Autocross / Solo" class="img-fluid">
+          <h4>Autocross / Solo</h4>
+          <p>Precision driving competition.</p>
+        </div>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-year">2004</div>
+          <div class="timeline-content">
+            <div class="timeline-image">
+              <img src="{{ url_for('static', filename='IMG_1112.jpeg') }}" alt="2004 CASC-OR sponsorship and black/red race car" class="img-fluid">
+            </div>
+            <h4>CASC-OR Championship &amp; Black/Red Car Debut</h4>
+            <p>WPF sponsors the CASC-OR Mobil 1 Autoslalom Championship Series and showcases its black/red race car—reinforcing performance friction leadership.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-year">2004</div>
+          <div class="timeline-content">
+            <div class="timeline-image">
+              <a href="{{ url_for('static', filename='IMG_1114.jpeg') }}" target="_blank" rel="noopener">
+                <img src="{{ url_for('static', filename='IMG_1114.jpeg') }}" alt="2004 Autoslalom Event #1 Director’s Report (scan)" class="img-fluid">
+              </a>
+            </div>
+            <h4>Autoslalom — Event #1 Report</h4>
+            <p>86 competitors despite rain; timing system rollout; strong participation across regions. Click image to read the full scan.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-year">2004</div>
+          <div class="timeline-content">
+            <div class="timeline-image">
+              <a href="{{ url_for('static', filename='IMG_1115.jpeg') }}" target="_blank" rel="noopener">
+                <img src="{{ url_for('static', filename='IMG_1115.jpeg') }}" alt="2004 Autoslalom Event #5 Director’s Report (scan)" class="img-fluid">
+              </a>
+            </div>
+            <h4>Autoslalom — Event #5 Report</h4>
+            <p>Large turnout; well-run event; top competitors highlighted; series momentum continues. Click image to read the full scan.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>
