@@ -1,0 +1,84 @@
+Failing items and exact next actions.
+
+Git tag + archive + shasum missing
+Run and paste raw outputs:
+
+pgsql
+Copy
+Edit
+git add -A
+git commit -m "prod gate finalize"
+git rev-parse --short HEAD
+git tag -a prod-ready -m "prod gate"
+git rev-parse --short prod-ready
+git status --porcelain
+git archive -o moduvo_prod_ready_${USER}_$(date +%F).tar.gz prod-ready
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+VERIFY_LOCAL.log not pasted in full
+Run and paste the entire file:
+
+bash
+Copy
+Edit
+sed -n '1,400p' VERIFY_LOCAL.log
+sed -n '401,800p' VERIFY_LOCAL.log
+sed -n '801,1200p' VERIFY_LOCAL.log
+Health + root response headers incomplete
+Run and paste:
+
+nginx
+Copy
+Edit
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+curl -sI http://127.0.0.1:8080 | sed -n '1,30p'
+Pricing file content not shown
+Run and paste:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.* | sed -n '1,20p'
+Static build location mismatch (you printed DIST_OK for dist/public, not client/dist)
+Fix build if needed, then prove SPA is served from client/dist:
+
+bash
+Copy
+Edit
+test -d client/dist && echo DIST_OK_client
+ls -la client/dist | sed -n '1,80p'
+curl -sI http://127.0.0.1:8080 | sed -n '1,20p'
+GCS assets 400 (no object found)
+Upload two test files and prove:
+
+bash
+Copy
+Edit
+# after uploading sample.glb and sample.usdz to ${GCS_BUCKET}
+echo $GCS_BUCKET
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.glb | sed -n '1,12p'
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.usdz | sed -n '1,12p'
+DB migrations proof minimal
+Run and paste:
+
+nginx
+Copy
+Edit
+psql "$DATABASE_URL" -c "select now(), current_user;"
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select count(*) from quotes;"
+SMTP verify must not crash boot
+Show server boot log line segment demonstrating graceful handling:
+
+pgsql
+Copy
+Edit
+grep -n "Email transporter" -n server/dist/index.js || true
+sed -n '1,60p' server/email.ts
+Rate-limit against 8080 (already shown; repeat once with header sample)
+Run and paste:
+
+nginx
+Copy
+Edit
+seq 1 20 | xargs -I{} curl -sI http://127.0.0.1:8080/healthz | grep -E "X-RateLimit-|HTTP/" -m 2

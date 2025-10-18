@@ -1,0 +1,102 @@
+Here is a precise Replit Agent prompt to finalize and prepare the ModuvoPlatform Repl for production and customer use:
+
+---
+
+**Replit Agent Prompt:**
+
+You're assisting in finalizing the ModuvoPlatform Repl for production launch. Implement and verify the following:
+
+### 1. Code Fixes and Functional Enhancements
+
+* Refactor `calculateQuote` to use real labour time, material costs, and apply finish-based multipliers. Add support for installation pricing or deposits.
+* Finalize email system: configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `FROM_EMAIL` env vars; test delivery, and update email templates with logo and business info.
+* Secure admin routes (`/api/admin/quotes`, `/api/admin/designs`) with proper RBAC using a `user.role` check (e.g., 'admin' or 'staff').
+* Strengthen `useAuth` and auth flow: ensure persistent sessions and support for Replit or Google login. Use JWT or session cookie securely.
+* Expand quote form validation: require valid email, phone, postal code formats, and show inline errors using `react-hook-form` and `zod`.
+
+### 2. Production Readiness
+
+* Configure Replit Deployments or migrate to Vercel (frontend) + Railway/Fly.io (backend).
+* Set `DATABASE_URL`, SMTP vars, and Google Cloud Storage variables (`GCS_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS`) in production environment.
+* Run Postgres migrations via Drizzle ORM.
+* Setup public GCS bucket for product images and 3D/AR assets. Confirm proper credentials for object upload.
+* Add rate limiting, CORS config, HTTPS enforcement, and CSRF protection on the API server.
+
+### 3. Sales and Lead Generation Improvements
+
+* Add real gallery content, client case studies, photos, and before/after comparisons.
+* Refine landing copy, replace all placeholders with benefit-driven text. Emphasize clutter-reduction, modular design, and time savings.
+* Make "Start Your Free Quote" CTA more prominent. Add alternative quick inquiry form and newsletter signup.
+* Implement Google Analytics and add basic SEO tags (title, meta, OG tags) across pages.
+
+### 4. AR/3D Finalization
+
+* Replace placeholder models with production-ready GLB and USDZ files for all product configurations.
+* Ensure WebXR support detection works across iOS and Android.
+* Finalize the `ARViewer` and fallback logic so AR entry works, and device instructions display clearly.
+
+### 5. Optional Polishing
+
+* Make configurator responsive and accessible (mobile testing, screen reader labels, high contrast, alt text).
+* Enable users to save designs and return later (design linking to auth).
+* Flesh out admin dashboard UI and connect to quote/design APIs with admin checks.
+* Scaffold blog page with markdown or CMS-like content loader.
+
+Ensure the code is modular, commented, and deploy-ready. Prioritize production stability, email reliability, and UX clarity across quote and AR flow.
+
+---
+
+Use this prompt directly in Replit AI Agent to begin full platform finalization and deployment prep.
+
+
+# Prompt for Replit Agent: Finalizing ModuvoPlatform Codebase
+
+## Fix or Complete Existing Features
+
+* **Pricing/Quote calculation** – The `calculateQuote` logic in `server/routes.ts` currently adds a flat 0.5 labour hours per component and marks up delivery by 10% for addresses outside Toronto. Refine this function to reflect realistic labour time per component, actual material costs, and finish multipliers for different product families. Additionally, include any extra costs like installation fees or required deposits to make quotes more accurate.
+
+* **Email notifications** – The email sending functionality uses a generic fallback (`quotes@moduvo.com`) if the `FROM_EMAIL` environment variable isn’t set, and it reads SMTP credentials from environment variables. Ensure all SMTP settings (host, port, user, password, from address) are correctly configured in the production environment. Customize the email templates with Moduvo branding (e.g. include the company logo and contact information) for a professional look. After configuring, test that notification emails send properly and avoid spam folders.
+
+* **Admin role and security** – Several API routes (e.g. `/api/admin/quotes` and design routes) have **TODO** comments for admin-only access. Implement a role-based access control system so that only authorized admin users can view or modify all quotes and designs. For example, use JWT claims or a user role field to differentiate admins from regular users. This will secure the admin endpoints and prevent unauthorized access to sensitive data.
+
+* **Authentication and sessions** – The front-end uses a `useAuth` hook that calls `/api/auth/user` to get the current user, implying a session or token-based auth. Make sure the authentication provider (Replit auth or another OAuth service) is properly configured and that user sessions persist across requests. Consider expanding login options beyond Replit (for instance, adding email/password or Google OAuth) to make signing up easier for a broad audience. Ensure that when users log in, their session is maintained (e.g. via secure cookies or JWT) so they remain authenticated while using the app.
+
+* **Form validation and UX** – The quote request form uses **Zod** schemas and **react-hook-form** for validation. Expand the validation rules to cover all required fields and formats (for example, ensure postal/ZIP codes and phone numbers are in valid formats and that no required field is left blank). Display clear error messages next to any field that fails validation so the user knows what to fix. After a user submits the form, the app currently shows a thank-you message – in addition to that, consider sending an immediate confirmation email to the customer with their submission details for a better user experience.
+
+* **AR/VR & 3D models** – The AR visualization feature uses WebXR with a fallback 3D viewer. To make this truly production-ready, prepare high-quality 3D models of your modules in GLB (for web/Android) and USDZ (for iOS) formats. Test the “View in AR” experience on both iOS and Android devices to ensure compatibility and performance. Hide or disable the AR button when WebXR isn’t supported by the browser to avoid confusion. Also, provide clear instructions for users on how to scan their room and place the model (as shown in your AR instructions overlay) so that even first-time AR users can follow along easily.
+
+## Prepare for Production Deployment
+
+* **Deployment method** – The current Replit preview (`*.repl.co` domain) is not ideal for production traffic or custom domain usage. Deploy the application using a more robust method: for example, use Replit’s deployment features or host the front-end on a platform like Vercel/Netlify and the Node.js API on a service like Railway, Fly.io, or Render. Set up a custom domain for the site and ensure DNS and SSL (HTTPS) are configured. Remember to include all necessary environment variables (such as `PORT`, `DATABASE_URL`, `SMTP_*` settings, `GCS_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS`, etc.) in the new hosting environment so the app can run properly. If moving away from Replit, make sure to redirect or handle the old \*.repl.co URL to your new domain.
+
+* **Database & object storage** – Right now the app uses Drizzle ORM with (presumably) a local SQLite or some default database on Replit, and stores files (like product images or 3D models) on Google Cloud Storage. For production, set up a dedicated PostgreSQL database (for instance on Neon, Supabase, or another cloud Postgres provider) and run all necessary migrations there. Update your `DATABASE_URL` to point to this production database. Also configure a Google Cloud Storage bucket (or an alternative like AWS S3) for storing images and models, and provide the service account credentials (`GOOGLE_APPLICATION_CREDENTIALS`) in the environment so the app can upload/read files. Don’t forget to seed the production database with your initial data (you mentioned an `/api/init-data` route – use that or run a migration script to load initial product and component info).
+
+* **Performance & security** – Serve the front-end as a static optimized build, possibly through a CDN, to improve load times. On the server/API side, enable appropriate CORS settings so that your front-end domain can communicate with the API securely. Implement basic security best practices: for instance, enable rate limiting on the API to prevent abuse, enforce CSRF protection on forms or use same-site cookies for session tokens, and require HTTPS for all client-server communication (especially if you’re not already covered by the hosting platform’s settings). These steps will ensure the app remains responsive and secure under real-world usage.
+
+## Improve the Site for Sales and Lead Generation
+
+* **Landing & content** – Enrich the landing page with real, compelling content. Replace any placeholder text with persuasive copy that highlights Moduvo’s value (focus on modular design benefits and achieving clutter-free spaces). Use high-quality hero images of actual installations to make a strong first impression. If available, include a few short testimonials from satisfied customers and maybe a quick case study or two (e.g. “John’s Closet Makeover – see how Moduvo transformed his space”). Finally, add a footer to every page with important links such as Privacy Policy, Terms of Service, contact info, and social media icons to make your site look professional and trustworthy.
+
+* **Gallery & projects** – Build out the Gallery page with photographs of your completed projects, organized by category (for example: Wardrobes, Home Offices, Garages, etc.). Each gallery item should be clickable, leading to a detailed case study or project page. On those project pages, show before-and-after photos, provide the room dimensions or constraints, describe which Moduvo modules were used, and include a quote or testimonial from the client about the outcome. This not only shows off your work but also helps future customers imagine what you could do for their space.
+
+* **Call-to-action emphasis** – Make it as easy as possible for potential customers to reach out. The “Start Your Free Quote” button should be highly visible on the home page (consider using a contrasting color or larger size so it stands out). Additionally, for visitors who aren’t ready to use the full configurator or form, create a quick contact or inquiry form – something that just asks for name, email, and a question/brief description of what they need. This lowers the barrier for lead capture. Also introduce a newsletter sign-up (perhaps in the footer or as a pop-up) offering an incentive like “Get 10% off your first installation” or a free design consultation for signing up. These call-to-action improvements will help convert more visitors into leads.
+
+* **SEO & analytics** – Improve your search engine visibility and gather insights on user behavior. Add unique meta titles and meta descriptions for each page (so that search results display informative text about your pages). Include Open Graph tags for rich link previews when sharing on social media (like a nice image and description for the homepage, gallery, etc.). Use semantic HTML elements (e.g. one `<h1>` per page, with logical `<h2>` and `<h3>` subheadings) to ensure the site is accessible and SEO-friendly. Integrate an analytics tool such as Google Analytics or a privacy-friendly alternative like Plausible. This will help you track how users find the site, which pages they visit most, and where they drop off in the quote process, informing future improvements.
+
+* **Payment or deposit integration** – Plan how you will handle payments once customers are ready to move forward. If you intend to allow online payments (for deposits or full payments for installation), set up an integration with a payment provider like **Stripe**. This could be as simple as taking a deposit to confirm a booking. If you’re not ready for online payments yet, it’s fine to continue without it for now – just collect the necessary contact info and perhaps include a note that “payment will be arranged separately.” In the meantime, prepare the workflow for accepting payments manually (e.g. sending an invoice or taking payment on-site) and consider adding the online payment feature when you’re confident about it.
+
+* **Customer follow-up process** – After a user submits a quote request, have a plan to follow up and nurture that lead. All quote requests and user details should be saved to your database or a Customer Relationship Management (CRM) tool. Integrate with a CRM like HubSpot or even an email marketing service like Mailchimp to manage these leads. Set up an automated email sequence: for example, immediately send a confirmation email to acknowledge the request, then perhaps a few days later send design tips or an invitation to schedule a design review call, etc. The goal is to keep the potential customer engaged. Personalize these follow-ups if possible (use their name, refer to what they requested) to build a relationship and guide them toward becoming a paying customer.
+
+## Optional Enhancements
+
+* **Responsiveness & Accessibility** – Test the website on various screen sizes (desktop, tablet, mobile) to ensure the layout and features (especially the configurator and AR viewer) work well on small screens. Improve accessibility by adding alt text to all images, using proper labels on form fields, and checking color contrast for text to meet WCAG guidelines. This will make the site usable for more people and devices.
+
+* **Account management** – Implement user accounts so that customers can save their designs and return later. Currently, the app relies on Replit auth; expanding this to a full signup/login system (with email/password and third-party logins like Google OAuth) would broaden your user base. With accounts, users could have a profile and see their saved designs or quotes. The code already has a `useAuth` hook and some authentication structure, so extend that into a complete account management feature.
+
+* **Admin dashboard** – Develop a proper admin dashboard for your team to manage the business. This dashboard can list incoming leads, quotes, and saved designs, and allow admins to update the status of quotes or add internal notes. You’ve marked certain routes as admin-only; once those checks are in place, create front-end pages under an “/admin” path that only admins can access. This will streamline managing content and orders without needing to dig directly into the database.
+
+* **Blog for SEO** – Consider adding a simple blog or articles section to drive organic traffic. You could write posts about topics like “How to Organize a Small Bedroom Closet” or “5 Modular Storage Ideas for Your Garage” – content that potential customers might search for. A blog can be a separate section of the site and doesn’t need to be complex (you can even hard-code a few posts or use a headless CMS if you prefer). Regularly posting relevant content will improve SEO and help establish Moduvo as an authority on storage solutions.
+
+## Summary
+
+The ModuvoPlatform codebase is a solid foundation – it already includes a product configurator, an AR viewer, a quote request form, and an attractive landing page. To prepare it for a successful launch, focus on three key areas: **(1)** polish and complete the core features (pricing logic, emails, auth, etc., as detailed above), **(2)** get the app production-ready by deploying it on reliable infrastructure with a proper database and storage backend, and **(3)** enhance the site’s content and marketing elements (fill in real content, add strong calls-to-action, integrate analytics, and follow up with leads). By addressing all the items outlined in this prompt, you will turn the current MVP into a production-ready web platform that not only functions smoothly but also attracts visitors and converts them into satisfied customers. Good luck with finalizing Moduvo!

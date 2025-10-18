@@ -1,0 +1,36 @@
+[Unit]
+Description=Moduvo Platform - Luxury Modular Storage Solutions
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=moduvo
+Group=moduvo
+WorkingDirectory=/opt/moduvo
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moduvo
+
+# Environment
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/moduvo/env
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/moduvo/logs
+ReadOnlyPaths=/opt/moduvo
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=1G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

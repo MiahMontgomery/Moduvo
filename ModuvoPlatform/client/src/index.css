@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 99.6%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(86, 28%, 83%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(60, 4.8%, 95.9%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(86, 28%, 83%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(86, 28%, 83%);
+  --radius: 0.5rem;
+  
+  /* Moduvo Brand Colors - Luxury Neutral Palette with Strategic Accents */
+  --moduvo-sage: #8FA68E; /* Primary CTA - deeper sage for conversions */
+  --moduvo-ivory: #FDFCF9; /* Background/Base - soft ivory */
+  --moduvo-charcoal: #2B2B2B; /* Header text - charcoal */
+  --moduvo-gray: #555555; /* Body text - cool grey */
+  --moduvo-taupe: #D8CEC4; /* Border/Shadow - warm taupe */
+  --moduvo-gold: #B8956A; /* Secondary accent - refined gold for luxury appeal */
+  --moduvo-cream: #F5F3F0; /* Card backgrounds - warm cream */
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(86, 28%, 83%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    background-color: var(--moduvo-ivory);
+    color: var(--moduvo-charcoal);
+    font-family: 'Inter', 'Source Sans Pro', system-ui, -apple-system, sans-serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Playfair Display', 'Libre Baskerville', Georgia, serif;
+    font-weight: 400;
+    line-height: 1.2;
+  }
+}
+
+@layer utilities {
+  /* Text Colors */
+  .text-moduvo-sage {
+    color: var(--moduvo-sage);
+  }
+  
+  .text-moduvo-charcoal {
+    color: var(--moduvo-charcoal);
+  }
+  
+  .text-moduvo-gray {
+    color: var(--moduvo-gray);
+  }
+  
+  .text-moduvo-ivory {
+    color: var(--moduvo-ivory);
+  }
+  
+  .text-moduvo-taupe {
+    color: var(--moduvo-taupe);
+  }
+  
+  .text-moduvo-gold {
+    color: var(--moduvo-gold);
+  }
+  
+  /* Background Colors */
+  .bg-moduvo-sage {
+    background-color: var(--moduvo-sage);
+  }
+  
+  .bg-moduvo-ivory {
+    background-color: var(--moduvo-ivory);
+  }
+  
+  .bg-moduvo-charcoal {
+    background-color: var(--moduvo-charcoal);
+  }
+  
+  .bg-moduvo-taupe {
+    background-color: var(--moduvo-taupe);
+  }
+  
+  .bg-moduvo-gold {
+    background-color: var(--moduvo-gold);
+  }
+
+  .bg-moduvo-cream {
+    background-color: var(--moduvo-cream);
+  }
+
+  .text-moduvo-cream {
+    color: var(--moduvo-cream);
+  }
+  
+  /* Border Colors */
+  .border-moduvo-sage {
+    border-color: var(--moduvo-sage);
+  }
+  
+  .border-moduvo-taupe {
+    border-color: var(--moduvo-taupe);
+  }
+  
+  .border-moduvo-gold {
+    border-color: var(--moduvo-gold);
+  }
+  
+  /* Hover States (Secondary Accent - Burnt Gold) */
+  .hover\\:bg-moduvo-gold:hover {
+    background-color: var(--moduvo-gold);
+  }
+  
+  .hover\\:text-moduvo-gold:hover {
+    color: var(--moduvo-gold);
+  }
+  
+  .hover\\:border-moduvo-gold:hover {
+    border-color: var(--moduvo-gold);
+  }
+  
+  /* Focus States */
+  .focus\\:ring-moduvo-gold:focus {
+    --tw-ring-color: var(--moduvo-gold);
+  }
+  
+  .focus\\:border-moduvo-gold:focus {
+    border-color: var(--moduvo-gold);
+  }
+}

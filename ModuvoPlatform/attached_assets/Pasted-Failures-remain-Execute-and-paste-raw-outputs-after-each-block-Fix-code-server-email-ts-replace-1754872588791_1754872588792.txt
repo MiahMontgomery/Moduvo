@@ -1,0 +1,195 @@
+Failures remain. Execute and paste raw outputs after each block.
+
+Fix code
+
+server/email.ts: replace createTransporter with:
+
+ts
+Copy
+Edit
+import nodemailer from "nodemailer";
+let transporter: nodemailer.Transporter | null = null;
+export async function createEmailTransporter() {
+  if (transporter) return transporter;
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST!,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+  });
+  await transporter.verify();
+  return transporter;
+}
+export async function sendQuoteEmail(to: string, subject: string, html: string) {
+  const t = await createEmailTransporter();
+  return t.sendMail({ from: process.env.FROM_EMAIL!, to, subject, html });
+}
+server/index.ts: remove manual CORS. Add:
+
+ts
+Copy
+Edit
+import cors from "cors";
+import compression from "compression";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import path from "path";
+app.use(helmet({ contentSecurityPolicy:false, crossOriginResourcePolicy:{policy:"cross-origin"} }));
+app.use(cors({ origin:(process.env.CORS_ORIGIN??"").split(","), credentials:true }));
+app.use(compression());
+app.use(rateLimit({ windowMs:15*60*1000, max:600 }));
+const clientDir = path.resolve(__dirname, "../../client/dist");
+app.use(express.static(clientDir));
+app.get("/healthz", (_req,res)=>res.status(200).send("ok"));
+app.get("*", (_req,res)=>res.sendFile(path.join(clientDir,"index.html")));
+Admin routes: replace isAuthenticated with requireAuth everywhere under /api/admin/*. Ensure server listens on process.env.PORT || 8080.
+
+Env template: rename to .env.production.example and include keys exactly:
+
+ini
+Copy
+Edit
+NODE_ENV=production
+PORT=8080
+DATABASE_URL=postgresql://moduvo:STRONG_PASSWORD@127.0.0.1:5432/moduvo
+CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to
+JWT_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+SESSION_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+SMTP_HOST=smtp.migadu.com
+SMTP_PORT=587
+SMTP_USER=quotes@moduvo.to
+SMTP_PASS=REPLACE_SECURE_APP_PASSWORD
+FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>"
+GCS_BUCKET=moduvo-prod-assets
+GOOGLE_APPLICATION_CREDENTIALS=/etc/moduvo/gcp-service-account.json
+LOG_LEVEL=info
+Client build: ensure client/vite.config.ts outputs to dist under client:
+
+ts
+Copy
+Edit
+export default defineConfig({ root: '.', build:{ outDir: 'dist', emptyOutDir: true } });
+Root scripts:
+
+json
+Copy
+Edit
+"scripts": {
+  "build:client": "vite build --config client/vite.config.ts",
+  "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server/dist",
+  "build": "npm run build:client && npm run build:server"
+}
+Commit, tag, archive
+
+pgsql
+Copy
+Edit
+git add -A
+git commit -m "prod: cors+compression, nodemailer fix, SPA static, RBAC normalize, env example"
+git rev-parse --short HEAD
+git tag -a prod-ready -m "prod gate"
+git rev-parse --short prod-ready
+git status --porcelain
+git archive -o moduvo_prod_ready_${USER}_$(date +%F).tar.gz prod-ready
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+Rebuild and run validate
+
+bash
+Copy
+Edit
+npm ci
+npm run build
+chmod +x scripts/validate.sh
+./scripts/validate.sh | tee VERIFY_LOCAL.log
+Paste proofs exactly
+A)
+
+git rev-parse --short HEAD
+
+git rev-parse --short prod-ready
+
+git status --porcelain
+
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+
+B)
+
+Full VERIFY_LOCAL.log content
+
+C)
+
+bash
+Copy
+Edit
+sed -n '1,160p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.* | sed -n '1,20p'
+D)
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/middleware/auth.ts
+grep -RIn "/api/admin" server/routes.* | sed -n '1,60p'
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+E)
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/index.ts
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+F)
+
+pgsql
+Copy
+Edit
+sed -n '1,200p' server/email.ts
+grep -RIn "transporter.verify" server
+G)
+
+bash
+Copy
+Edit
+cat .env.production.example
+H)
+
+bash
+Copy
+Edit
+test -d client/dist && echo DIST_OK
+curl -sI http://127.0.0.1:8080 | sed -n '1,12p'
+I)
+
+bash
+Copy
+Edit
+sed -n '1,200p' nginx/moduvo.conf
+sed -n '1,200p' systemd/moduvo.service
+sed -n '1,200p' logrotate/moduvo
+J)
+
+nginx
+Copy
+Edit
+psql "$DATABASE_URL" -c "select now(), current_user;"
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select count(*) from quotes;" || true
+K)
+
+bash
+Copy
+Edit
+seq 1 700 | xargs -I{} -n1 -P16 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/healthz | sort | uniq -c
+L)
+
+bash
+Copy
+Edit
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.glb | sed -n '1,12p'
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.usdz | sed -n '1,12p'
+M)
+
+nginx
+Copy
+Edit
+printf "\n== CHANGES ==\n"; git log --oneline -n 3; git diff --name-status HEAD~1..HEAD

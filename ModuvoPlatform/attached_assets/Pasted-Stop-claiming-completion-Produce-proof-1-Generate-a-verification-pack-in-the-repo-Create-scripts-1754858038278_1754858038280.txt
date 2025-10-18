@@ -1,0 +1,233 @@
+Stop claiming completion. Produce proof.
+
+1) Generate a verification pack in the repo
+Create scripts/validate.sh with executable permissions:
+
+bash
+Copy
+Edit
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Repo summary =="
+git rev-parse --short HEAD
+git status --porcelain
+
+echo "== Required files =="
+ls -la server/index.{ts,js} server/routes.{ts,js} server/email.{ts,js} server/pricing.{ts,js} || true
+ls -la server/middleware/auth.{ts,js} || true
+ls -la nginx/moduvo.conf systemd/moduvo.service logrotate/moduvo || true
+test -f .env.production.example && echo ".env.production.example present"
+
+echo "== Grep sanity =="
+grep -RIn "helmet" server/index.* || true
+grep -RIn "rateLimit" server/index.* || true
+grep -RIn "cors(" server/index.* || true
+grep -RIn "compression" server/index.* || true
+grep -RIn "requireAdmin" server || true
+grep -RIn "/api/auth/user" server client || true
+grep -RIn "smtp.migadu.com" server || true
+grep -RIn "FROM_EMAIL" server || true
+grep -RIn "GCS_BUCKET" server || true
+grep -RIn "GOOGLE_APPLICATION_CREDENTIALS" server || true
+grep -RIn "MIN_ORDER" server || true
+
+echo "== Typecheck & build =="
+npm run typecheck || true
+npm run build
+
+echo "== Start app (background) =="
+PORT=8080 NODE_ENV=production LOG_LEVEL=info \
+CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to \
+JWT_SECRET=testtesttesttesttesttesttesttesttesttesttesttesttesttesttestt \
+SESSION_SECRET=testtesttesttesttesttesttesttesttesttesttesttesttesttestte \
+DATABASE_URL=postgresql://moduvo:password@127.0.0.1:5432/moduvo \
+SMTP_HOST=smtp.migadu.com SMTP_PORT=587 SMTP_USER=quotes@moduvo.to SMTP_PASS=xxx \
+FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>" \
+GCS_BUCKET=moduvo-prod-assets GOOGLE_APPLICATION_CREDENTIALS=/etc/moduvo/gcp.json \
+node server/dist/index.js &
+
+APP_PID=$!
+sleep 2
+
+echo "== Healthcheck =="
+curl -sf http://127.0.0.1:8080/healthz
+
+echo "== RBAC negative test (expect 401/403) =="
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+
+echo "== Security headers =="
+curl -sI http://127.0.0.1:8080/healthz | grep -E "X-Content-Type-Options|X-Frame-Options|Referrer-Policy" || true
+
+echo "== SPA static =="
+test -d client/dist && echo "dist present"
+curl -sI http://127.0.0.1:8080 | head -n 10 || true
+
+echo "== Pricing fingerprint =="
+node -e "try{const p=require('./server/dist/pricing');console.log(Object.keys(p));}catch(e){console.error(e);process.exit(1)}"
+
+echo "== Stop app =="
+kill $APP_PID || true
+wait $APP_PID 2>/dev/null || true
+
+echo "OK"
+Run:
+
+bash
+Copy
+Edit
+chmod +x scripts/validate.sh
+./scripts/validate.sh | tee VERIFY_LOCAL.log
+2) Prove deterministic pricing exists and is used
+Show server/pricing.ts exporting constants and a calculateQuote(config) that is imported by server/routes.ts.
+
+Show MIN_ORDER=1200 and delivery zones: TORONTO=75, GTA=125, ONTARIO=195, OOP=295.
+
+Show labour map and rate: {shelf:0.25,drawer:0.5,door:0.4,rail:0.15} and LABOUR_RATE=85.
+
+Commands:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.*
+3) Prove RBAC guards are active
+server/middleware/auth.ts contains requireAuth and requireAdmin.
+
+All /api/admin/* routes use both.
+
+Commands:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/middleware/auth.ts
+grep -RIn "/api/admin" -n server/routes.* | sed -n '1,120p'
+4) Prove Migadu SMTP is wired
+server/email.ts creates nodemailer transport with smtp.migadu.com:587, secure:false, transporter.verify() at boot.
+
+sendQuoteEmail() uses FROM_EMAIL and sends HTML template.
+
+Commands:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/email.ts
+grep -RIn "transporter.verify" server
+5) Prove security middleware is enabled
+helmet, rateLimit, cors, compression in server/index.ts.
+
+/healthz defined.
+
+SPA static serving of client/dist.
+
+Commands:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/index.ts
+6) Prove environment completeness
+.env.production.example includes: NODE_ENV, PORT, DATABASE_URL, CORS_ORIGIN, JWT_SECRET, SESSION_SECRET, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL, GCS_BUCKET, GOOGLE_APPLICATION_CREDENTIALS, LOG_LEVEL.
+
+Command:
+
+bash
+Copy
+Edit
+cat .env.production.example
+7) Produce deployment artifacts
+nginx/moduvo.conf matches reverse-proxy spec with HTTPS and headers.
+
+systemd/moduvo.service launches server/dist/index.js under www-data.
+
+logrotate/moduvo exists.
+
+production-deployment.md and DEPLOYMENT_CHECKLIST.md present and complete.
+
+Commands:
+
+bash
+Copy
+Edit
+sed -n '1,200p' nginx/moduvo.conf
+sed -n '1,200p' systemd/moduvo.service
+sed -n '1,200p' logrotate/moduvo
+sed -n '1,200p' production-deployment.md
+sed -n '1,200p' DEPLOYMENT_CHECKLIST.md
+8) DNS and email readiness (run on Contabo)
+bash
+Copy
+Edit
+dig +short A moduvo.to
+dig +short A www.moduvo.to
+dig mx moduvo.to +short
+dig txt moduvo.to +short | sed 's/"//g'
+dig txt _dmarc.moduvo.to +short | sed 's/"//g'
+# DKIM hostnames come from Migadu panel; verify each:
+dig txt s1._domainkey.moduvo.to +short
+dig txt s2._domainkey.moduvo.to +short
+9) Nginx and TLS on Contabo
+bash
+Copy
+Edit
+sudo ln -s /etc/nginx/sites-available/moduvo.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d moduvo.to -d www.moduvo.to --redirect --agree-tos -m admin@moduvo.to
+curl -I https://moduvo.to | sed -n '1,10p'
+10) Database, migrations, seed
+bash
+Copy
+Edit
+export DATABASE_URL=postgresql://moduvo:STRONG_PASSWORD@127.0.0.1:5432/moduvo
+npm run db:migrate
+# if you seeded via route:
+curl -s -XPOST http://127.0.0.1:8080/api/init-data | head -c 400 || true
+11) Systemd service on Contabo
+bash
+Copy
+Edit
+sudo mkdir -p /etc/moduvo
+sudo cp .env.production /etc/moduvo/env
+sudo systemctl daemon-reload
+sudo systemctl enable --now moduvo
+journalctl -u moduvo -n 80 --no-pager
+12) Smoke tests (public)
+bash
+Copy
+Edit
+curl -s https://moduvo.to/healthz
+curl -sI https://moduvo.to | grep -E "strict-origin-when-cross-origin|nosniff|DENY" || true
+curl -s -o /dev/null -w "%{http_code}\n" https://moduvo.to/api/admin/quotes
+13) Rate-limit probe (local)
+bash
+Copy
+Edit
+seq 1 650 | xargs -I{} -n1 -P16 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/healthz | sort | uniq -c
+14) AR/asset availability
+Prove at least one GLB/USDZ is publicly retrievable or via signed URL.
+
+Commands:
+
+bash
+Copy
+Edit
+curl -I https://storage.googleapis.com/moduvo-prod-assets/sample.glb || true
+curl -I https://storage.googleapis.com/moduvo-prod-assets/sample.usdz || true
+15) Commit and artifact trail
+Produce VERIFY.md containing:
+
+Command transcript from scripts/validate.sh and sections 2–7 outputs.
+
+Hash of current commit.
+
+List of changed files since last review:
+
+bash
+Copy
+Edit
+git log --oneline -n 3
+git diff --name-status HEAD~1..HEAD
+Run all sections in order and capture outputs. If any command fails, fix the code and re-run until VERIFY.md is clean.

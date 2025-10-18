@@ -1,0 +1,71 @@
+== Grep ==
+7:    outDir: "dist", 
+29:app.use(express.static(clientDir));
+31:app.get("/healthz", (_req,res) => res.status(200).send("ok"));
+104:app.get("*", (_req,res) => res.sendFile(path.join(clientDir, "index.html")));
+server/middleware/index.ts:2:export { requireAuth, requireAdmin, optionalAuth, type AuthenticatedRequest } from '../auth';
+server/auth.ts:83:export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+server/routes.ts:4:import { requireAuth, requireAdmin, optionalAuth, type AuthenticatedRequest } from "./auth";
+server/routes.ts:210:  app.get('/api/admin/quotes', requireAuth, requireAdmin, async (req, res) => {
+server/routes.ts:220:  app.put('/api/admin/quotes/:id', requireAuth, requireAdmin, async (req, res) => {
+server/routes.ts:230:  app.get('/api/admin/designs', requireAuth, requireAdmin, async (req, res) => {
+server/dist/index.js:431:async function requireAdmin(req, res, next) {
+server/dist/index.js:1095:  app2.get("/api/admin/quotes", requireAuth, requireAdmin, async (req, res) => {
+server/dist/index.js:1104:  app2.put("/api/admin/quotes/:id", requireAuth, requireAdmin, async (req, res) => {
+server/dist/index.js:1113:  app2.get("/api/admin/designs", requireAuth, requireAdmin, async (req, res) => {
+210:  app.get('/api/admin/quotes', requireAuth, requireAdmin, async (req, res) => {
+220:  app.put('/api/admin/quotes/:id', requireAuth, requireAdmin, async (req, res) => {
+230:  app.get('/api/admin/designs', requireAuth, requireAdmin, async (req, res) => {
+server/routes.ts:10:import { calculateQuote } from "./pricing";
+server/routes.ts:51:      const quote = calculateQuote(configuration, location);
+server/routes.ts:65:      const pricing = calculateQuote(configuration, validatedData.installationAddress || undefined);
+server/pricing.ts:44:export function calculateQuote(configuration: PricingConfiguration, location?: string) {
+== Build ==
+
+> rest-express@1.0.0 build
+> vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
+
+vite v5.4.19 building for production...
+transforming...
+✓ 2013 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/public/index.html                                          0.38 kB │ gzip:   0.26 kB
+../dist/public/assets/white-bedroom-storage-C7uJrCxn.jpg           4.57 kB
+../dist/public/assets/white-entertainment-center-oG9g2iAU.jpg      6.71 kB
+../dist/public/assets/blue-white-media-center-I_Ub8Tw8.jpg         7.26 kB
+../dist/public/assets/modern-gray-kitchen-DX89vfzJ.jpg             7.65 kB
+../dist/public/assets/gray-desk-storage-combo-D4MO3nv1.jpg         7.74 kB
+../dist/public/assets/gray-built-in-office-BYh4ZMuO.jpg            7.78 kB
+../dist/public/assets/hero-modern-office-DYchjFEH.jpg              9.38 kB
+../dist/public/assets/index-BDXwuKDL.css                         134.87 kB │ gzip:  22.28 kB
+../dist/public/assets/webxr-polyfill.module-_dgS-fkU.js          167.88 kB │ gzip:  51.34 kB
+../dist/public/assets/index-CnDczkmi.js                        1,348.33 kB │ gzip: 381.89 kB
+✓ built in 16.78s
+== Smoke (node, prod mode) ==
+okHTTP/1.1 200 OK
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: cross-origin
+Origin-Agent-Cluster: ?1
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-DNS-Prefetch-Control: off
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-XSS-Protection: 0
+Vary: Origin, Accept-Encoding
+Access-Control-Allow-Credentials: true
+X-RateLimit-Limit: 600
+X-RateLimit-Remaining: 598
+Date: Mon, 11 Aug 2025 23:55:42 GMT
+X-RateLimit-Reset: 1754957443
+Content-Type: text/html; charset=utf-8
+Content-Length: 2
+ETag: W/"2-eoX0dku9ba8cNUXvu/DyeabcC+s"
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+401
+OK

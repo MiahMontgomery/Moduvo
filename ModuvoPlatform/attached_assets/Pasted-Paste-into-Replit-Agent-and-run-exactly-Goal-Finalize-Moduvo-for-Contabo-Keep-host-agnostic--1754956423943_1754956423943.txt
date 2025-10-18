@@ -1,0 +1,99 @@
+Paste into Replit Agent and run exactly.
+
+```
+Goal
+Finalize Moduvo for Contabo. Keep host-agnostic. Verify SPA serving from client/dist, AR/VR runtime, admin RBAC, env readiness, and produce a deployable handoff tarball plus a verification log.
+
+Actions
+
+1) Sanity checks (no edits)
+- Confirm client build path and server static wiring:
+  - Must find in client/vite.config.ts: build: { outDir: "dist" }
+  - Must find in server/index.ts: 
+    const clientDir = path.resolve(__dirname, "../../client/dist");
+    app.use(express.static(clientDir));
+    app.get("/healthz", (_req,res)=>res.status(200).send("ok"));
+    app.get("*", (_req,res)=>res.sendFile(path.join(clientDir, "index.html")));
+- Confirm VR/AR files exist:
+  - client/src/components/ar-viewer.tsx
+  - client/src/components/ar-fallback.tsx
+  - client/src/pages/visualize.tsx
+- Confirm modular data and asset references:
+  - client/src/data/modular-storage.ts includes assetUrls with .glb and .usdz under /public-objects/
+- Confirm RBAC/auth wiring:
+  - server/routes.ts uses requireAuth + requireAdmin on every /api/admin/*
+  - /api/auth/user returns 401 if no req.user; else { id, email, role }
+
+Print a checklist with PASS/FAIL for each item above.
+
+2) Env completeness
+- Ensure .env.production.example contains exactly these keys (values can be placeholders):
+  NODE_ENV, PORT, DATABASE_URL, CORS_ORIGIN, JWT_SECRET, SESSION_SECRET,
+  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL,
+  GCS_BUCKET, GOOGLE_APPLICATION_CREDENTIALS, LOG_LEVEL
+- If any are missing, append them with placeholder values.
+- Output the final .env.production.example to console.
+
+3) AR/VR asset audit
+- From client/src/data/modular-storage.ts, extract every assetUrls.glb and assetUrls.usdz path (dedupe).
+- For each, check existence in the repo (relative under client/public or public-objects). 
+- Produce a table: file → EXISTS|MISSING.
+- If any are MISSING, create client/public-objects/README_ASSETS.md explaining required upload to your bucket and public access; list missing filenames verbatim.
+
+4) Build
+- Run: npm run build (do not copy assets into server/dist/public; keep client build in client/dist).
+- After build, print:
+  - Presence of client/dist/index.html
+  - First 20 entries of client/dist/assets (names only)
+  - Confirm server/dist/index.js exists
+
+5) Validator
+- Create/overwrite scripts/validate.sh with:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "== Grep =="
+  grep -RIn "outDir: \"dist\"" client/vite.config.ts || true
+  grep -RIn "express.static(clientDir)" server/index.ts || true
+  grep -RIn "/healthz" server/index.ts || true
+  grep -RIn "app.get(\"\\*\"" server/index.ts || true
+  grep -RIn "requireAdmin" server || true
+  grep -RIn "/api/admin" server/routes.* || true
+  grep -RIn "calculateQuote" server/routes.* server/pricing.* || true
+  echo "== Build =="
+  npm run build
+  echo "== Smoke (node, prod mode) =="
+  PORT=8080 NODE_ENV=production \
+  JWT_SECRET=devSESSIONJWTSECRETSESSIONJWTSECRETSESSIONJWTSECRET \
+  SESSION_SECRET=devSESSIONSECRETSESSIONSECRETSESSIONSECRET \
+  CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to \
+  DATABASE_URL=${DATABASE_URL:-postgresql://moduvo:password@127.0.0.1:5432/moduvo} \
+  SMTP_HOST=smtp.migadu.com SMTP_PORT=587 SMTP_USER=quotes@moduvo.to SMTP_PASS=xxx \
+  FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>" \
+  node server/dist/index.js > /tmp/moduvo.out 2>&1 &
+  APP_PID=$!
+  for i in {1..25}; do curl -sf http://127.0.0.1:8080/healthz && break || sleep 1; done
+  curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+  kill $APP_PID || true; wait $APP_PID 2>/dev/null || true
+  echo OK
+- chmod +x scripts/validate.sh
+- Run: ./scripts/validate.sh | tee VERIFY_LOCAL.log
+
+6) Handoff package
+- Create release/ and copy:
+  client/dist/**, server/dist/**, nginx/moduvo.conf, systemd/moduvo.service, logrotate/moduvo, .env.production.example, production-deployment.md, DEPLOYMENT_CHECKLIST.md, VERIFY_LOCAL.log, client/public-objects/README_ASSETS.md (if created)
+- Tarball:
+  tar -czf moduvo_handoff_$(date +%F).tar.gz -C release .
+- Print:
+  ls -lh moduvo_handoff_*.tar.gz
+  tail -n 40 VERIFY_LOCAL.log
+
+7) Output summary
+- Echo a single final block:
+  BUILD_OK: yes/no
+  HEALTHZ_200: yes/no
+  ADMIN_UNAUTH_401_403: yes/no
+  CLIENT_DIST_OK: yes/no
+  MISSING_ASSETS_COUNT: <n>
+  HANDOFF_TARBALL: <filename>
+```

@@ -1,0 +1,290 @@
+Good. Execute now. Do not add scope. Implement exactly this with working code and verifiable outputs.
+
+1) DB migrations
+Create a migration that adds both tables and required indexes.
+
+sql
+Copy
+Edit
+-- 001_add_evidence_and_revenue_events.sql
+CREATE TABLE IF NOT EXISTS evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,                    -- screenshot|file|har|metric|diff
+  uri TEXT NOT NULL,                     -- /artifacts/<runId>/<file>
+  meta TEXT,                             -- JSON string
+  verdict TEXT NOT NULL,                 -- pass|fail|info
+  reasoning TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_task_run_id ON evidence(task_run_id);
+
+CREATE TABLE IF NOT EXISTS revenue_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  source TEXT NOT NULL,                  -- stripe|etsy|shopify|upwork|manual
+  source_id TEXT NOT NULL,               -- provider id (pi_xxx, listing id)
+  amount_cents INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'USD',
+  occurred_at DATETIME NOT NULL,
+  raw_json TEXT,                         -- provider response
+  artifact_uri TEXT                      -- /artifacts/<runId>/<file>.json
+);
+CREATE INDEX IF NOT EXISTS idx_revenue_events_project_id ON revenue_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_revenue_events_occurred_at ON revenue_events(occurred_at);
+Run:
+
+nginx
+Copy
+Edit
+pnpm migrate
+2) Artifacts filesystem
+Create directories at startup and serve them statically.
+
+ts
+Copy
+Edit
+// server/bootstrap/artifacts.ts
+import fs from "fs";
+import path from "path";
+export const artifactsRoot = path.resolve("data/artifacts");
+export function ensureArtifacts() {
+  fs.mkdirSync(artifactsRoot, { recursive: true });
+}
+ts
+Copy
+Edit
+// server/index.ts (or wherever Express is created)
+import express from "express";
+import { ensureArtifacts, artifactsRoot } from "./bootstrap/artifacts";
+ensureArtifacts();
+app.use("/artifacts", express.static(artifactsRoot, { fallthrough: false }));
+3) Evidence API
+ts
+Copy
+Edit
+// server/routes/evidence.ts
+import { Router } from "express";
+import { db } from "../db";
+const r = Router();
+
+r.get("/api/runs/:runId/evidence", async (req, res) => {
+  const { runId } = req.params;
+  const rows = await db.all(
+    "SELECT id, task_run_id, kind, uri, meta, verdict, reasoning, created_at FROM evidence WHERE task_run_id = ? ORDER BY id DESC",
+    [runId]
+  );
+  res.json({ runId, evidence: rows });
+});
+
+export default r;
+Mount it in your main router.
+
+4) Playwright helpers
+ts
+Copy
+Edit
+// services/evidence/collector.ts
+import fs from "fs";
+import path from "path";
+import { artifactsRoot } from "../../server/bootstrap/artifacts";
+
+export async function saveJsonArtifact(runId: string, name: string, obj: any) {
+  const dir = path.join(artifactsRoot, runId);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${Date.now()}_${name}.json`);
+  fs.writeFileSync(file, JSON.stringify(obj, null, 2), "utf-8");
+  return `/artifacts/${runId}/${path.basename(file)}`;
+}
+
+export async function captureScreenshot(runId: string, page: any, name = "shot") {
+  const dir = path.join(artifactsRoot, runId);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = `${Date.now()}_${name}.png`;
+  const abs = path.join(dir, file);
+  await page.screenshot({ path: abs, fullPage: true });
+  return `/artifacts/${runId}/${file}`;
+}
+5) Runner must write evidence before PASS
+ts
+Copy
+Edit
+// core/runner/task-runner.ts (inside try {} success path)
+import { db } from "../../server/db";
+import { saveJsonArtifact, captureScreenshot } from "../../services/evidence/collector";
+
+async function recordEvidenceRow(runId: string, kind: string, uri: string, verdict: "pass"|"fail"|"info", reasoning: string, meta: any = {}) {
+  await db.run(
+    "INSERT INTO evidence (task_run_id, kind, uri, verdict, reasoning, meta) VALUES (?,?,?,?,?,?)",
+    [runId, kind, uri, verdict, reasoning, JSON.stringify(meta)]
+  );
+}
+
+// Example after a successful step with page verification
+const shotUri = await captureScreenshot(runId, page, task.title);
+await recordEvidenceRow(runId, "screenshot", shotUri, "pass", "Selector matched and page state captured", { selector: task.selector });
+
+// Ensure at least one evidence exists before marking PASSED
+const row = await db.get("SELECT COUNT(*) as c FROM evidence WHERE task_run_id = ?", [runId]);
+if (!row?.c) throw new Error("No evidence recorded; cannot mark PASSED");
+await markPassed(runId);
+6) Healthz with real checks
+ts
+Copy
+Edit
+// server/routes/healthz.ts
+import { Router } from "express";
+import { db } from "../db";
+import { getSchedulerStatus } from "../scheduler/status";
+const r = Router();
+
+r.get("/healthz", async (_req, res) => {
+  const dbOk = await db.get("SELECT 1 as ok");
+  const scheduler = await getSchedulerStatus(); // implement to read heartbeat row or process IPC
+  res.json({ db: !!dbOk, queue: true, scheduler: scheduler.running, version: process.env.APP_VERSION ?? "dev" });
+});
+
+export default r;
+7) PM2 ecosystem
+Run isolated processes.
+
+js
+Copy
+Edit
+// ecosystem.config.js
+module.exports = {
+  apps: [
+    { name: "api", script: "dist/server/index.js", env: { NODE_ENV: "production" } },
+    { name: "worker", script: "dist/worker/index.js", env: { NODE_ENV: "production" } },
+    { name: "scheduler", script: "dist/scheduler/index.js", env: { NODE_ENV: "production" } }
+  ]
+};
+Commands:
+
+arduino
+Copy
+Edit
+pnpm build
+pm2 start ecosystem.config.js
+pm2 save
+8) Budget guard hard stop
+ts
+Copy
+Edit
+// services/trest/guard.ts
+import { db } from "../../server/db";
+
+export async function withBudgetGuard<T>(projectId: string, estCostCents: number, fn: () => Promise<T>) {
+  const { spent = 0, cap = 0 } = await db.get(`
+    SELECT COALESCE(SUM(amount_cents),0) as spent, (SELECT monthly_cap_cents FROM budget_guards WHERE project_id = ?) as cap
+  `,[projectId]) ?? {};
+  if (cap && spent + estCostCents > cap) {
+    await db.run("INSERT INTO budget_events(project_id, kind, detail) VALUES(?,?,?)",
+      [projectId, "BUDGET_EXCEEDED", JSON.stringify({ spent, cap, estCostCents })]);
+    throw new Error("BUDGET_EXCEEDED");
+  }
+  const out = await fn();
+  // record actual cost here if you meter per-call
+  return out;
+}
+Ensure worker catches BUDGET_EXCEEDED, marks remaining queued tasks BLOCKED, and stops the run.
+
+9) Gmail Drafts POC
+Minimal service; real OAuth tokens must already be provisioned.
+
+ts
+Copy
+Edit
+// services/email/gmail.ts
+import { google } from "googleapis";
+
+export async function createDraft({ accessToken, to, subject, html }:{
+  accessToken: string; to: string; subject: string; html: string;
+}) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  const gmail = google.gmail({ version: "v1", auth });
+  const message =
+    `To: ${to}\r\n` +
+    `Subject: ${subject}\r\n` +
+    `Content-Type: text/html; charset=UTF-8\r\n\r\n` +
+    html;
+  const encoded = Buffer.from(message).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const { data } = await gmail.users.drafts.create({
+    userId: "me",
+    requestBody: { message: { raw: encoded } }
+  });
+  return data; // includes id, message.threadId
+}
+Wire a task executor:
+
+ts
+Copy
+Edit
+// services/skills/gmail_create_draft.ts
+import { createDraft } from "../email/gmail";
+import { saveJsonArtifact, captureScreenshot } from "../evidence/collector";
+
+export async function gmailCreateDraft(runId: string, page: any, args: { accessToken: string; to: string; subject: string; html: string; }) {
+  const result = await createDraft(args);
+  const jsonUri = await saveJsonArtifact(runId, "gmail_draft", result);
+  // Optional UI proof: navigate and screenshot Drafts
+  await page.goto("https://mail.google.com/mail/u/0/#drafts");
+  await page.waitForTimeout(1500);
+  const shotUri = await captureScreenshot(runId, page, "gmail_drafts");
+  return { jsonUri, shotUri, draftId: result.id };
+}
+Verifier:
+
+ts
+Copy
+Edit
+// core/verify/gmail_draft.ts
+export function verifyGmailDraft(apiResp:any): { verdict:"pass"|"fail", reasoning:string } {
+  if (apiResp?.id) return { verdict: "pass", reasoning: "Gmail returned draft id" };
+  return { verdict: "fail", reasoning: "No draft id in Gmail response" };
+}
+Ensure runner records both artifacts and verdict before PASS.
+
+10) Revenue integrity endpoints
+Summary must report only ledger totals.
+
+ts
+Copy
+Edit
+// server/routes/summary.ts
+r.get("/api/summary", async (_req, res) => {
+  const row = await db.get("SELECT COALESCE(SUM(amount_cents),0) AS cents FROM revenue_events");
+  res.json({ actualRevenue: (row?.cents ?? 0)/100 });
+});
+Test seeding (QA only):
+
+ts
+Copy
+Edit
+// server/routes/revenue-test.ts
+r.post("/api/revenue/test-event", async (req, res) => {
+  const { project_id, amount_cents, source, source_id } = req.body;
+  const occurred_at = new Date().toISOString();
+  const artifact_uri = await saveJsonArtifact("ledger", "test_event", { project_id, amount_cents, source, source_id, occurred_at });
+  await db.run(
+    "INSERT INTO revenue_events(project_id, source, source_id, amount_cents, currency, occurred_at, raw_json, artifact_uri) VALUES (?,?,?,?,?,?,?,?)",
+    [project_id, source, source_id, amount_cents, "USD", occurred_at, JSON.stringify(req.body), artifact_uri]
+  );
+  res.status(201).json({ ok: true });
+});
+11) Acceptance commands
+Run in this order after build and PM2 start:
+
+bash
+Copy
+Edit
+curl -sS localhost:5000/healthz
+sqlite3 data/titan.db "SELECT COUNT(*) FROM evidence;"
+sqlite3 data/titan.db "SELECT t.id,t.title,t.status,COUNT(e.id) FROM tasks t LEFT JOIN evidence e ON e.task_run_id=t.last_run_id WHERE t.status='PASSED' GROUP BY 1,2,3 HAVING COUNT(e.id)=0;"
+# After a gmail_create_draft run completes:
+curl -sS localhost:5000/api/runs/<runId>/evidence | jq .
+ls -lah data/artifacts/<runId> | head
+sqlite3 data/titan.db "SELECT SUM(amount_cents)/100.0, COUNT(*) FROM revenue_events;"
+12) Replit agent prompt
+Use the exact prompt you compiled. Do not let it refactor unrelated code. Demand the commands above as its proof outputs.

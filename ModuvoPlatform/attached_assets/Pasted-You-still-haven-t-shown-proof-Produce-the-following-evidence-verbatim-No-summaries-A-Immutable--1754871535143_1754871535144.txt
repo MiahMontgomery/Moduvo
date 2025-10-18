@@ -1,0 +1,109 @@
+You still haven’t shown proof. Produce the following evidence verbatim. No summaries.
+
+A) Immutable artefacts
+Commit
+
+arduino
+Copy
+Edit
+git rev-parse --short HEAD
+git tag -a prod-ready -m "prod gate" && git rev-parse --short prod-ready
+git status --porcelain
+Pack
+
+nginx
+Copy
+Edit
+git archive -o moduvo_prod_ready_${USER}_$(date +%F).tar.gz prod-ready
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+B) Local verification log (single run)
+bash
+Copy
+Edit
+chmod +x scripts/validate.sh
+./scripts/validate.sh | tee VERIFY_LOCAL.log
+Paste the entire VERIFY_LOCAL.log.
+
+C) Deterministic pricing proof
+bash
+Copy
+Edit
+sed -n '1,160p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.* | sed -n '1,20p'
+Expected literals present:
+MIN_ORDER = 1200
+LABOUR_RATE = 85
+{ shelf: 0.25, drawer: 0.5, door: 0.4, rail: 0.15 }
+DELIVERY_ZONES = { TORONTO: 75, GTA: 125, ONTARIO: 195, OOP: 295 }
+
+D) RBAC proof
+bash
+Copy
+Edit
+sed -n '1,200p' server/middleware/auth.ts
+grep -RIn "/api/admin" server/routes.* | sed -n '1,60p'
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+HTTP code must be 401 or 403.
+
+E) Security middleware proof
+bash
+Copy
+Edit
+sed -n '1,160p' server/index.ts
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,20p'
+Headers must include: X-Content-Type-Options, X-Frame-Options, Referrer-Policy.
+
+F) Migadu SMTP wiring
+pgsql
+Copy
+Edit
+sed -n '1,200p' server/email.ts
+grep -RIn "transporter.verify" server
+Must show smtp.migadu.com:587, secure: false, FROM_EMAIL usage.
+
+G) Environment completeness
+bash
+Copy
+Edit
+cat .env.production.example
+Must include: NODE_ENV, PORT, DATABASE_URL, CORS_ORIGIN, JWT_SECRET, SESSION_SECRET, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL, GCS_BUCKET, GOOGLE_APPLICATION_CREDENTIALS, LOG_LEVEL.
+
+H) Static build + SPA
+bash
+Copy
+Edit
+npm run build
+test -d client/dist && echo DIST_OK
+curl -sI http://127.0.0.1:8080 | sed -n '1,12p'
+I) Nginx/systemd artefacts
+bash
+Copy
+Edit
+sed -n '1,200p' nginx/moduvo.conf
+sed -n '1,200p' systemd/moduvo.service
+sed -n '1,200p' logrotate/moduvo
+J) Database and migrations
+nginx
+Copy
+Edit
+psql "$DATABASE_URL" -c "select now(), current_user;"
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select count(*) from quotes;" || true
+K) Rate-limit behaviour
+bash
+Copy
+Edit
+seq 1 700 | xargs -I{} -n1 -P16 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/healthz | sort | uniq -c
+Output must contain 429 after the threshold.
+
+L) GCS asset reachability
+bash
+Copy
+Edit
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.glb | sed -n '1,12p' || true
+M) Final bundle
+nginx
+Copy
+Edit
+printf "\n== CHANGES ==\n"; git log --oneline -n 3; git diff --name-status HEAD~1..HEAD
+Paste raw outputs for A–M.

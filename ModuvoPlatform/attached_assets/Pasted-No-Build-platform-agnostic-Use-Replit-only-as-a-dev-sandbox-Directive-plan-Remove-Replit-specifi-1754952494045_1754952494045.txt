@@ -1,0 +1,67 @@
+No. Build platform-agnostic. Use Replit only as a dev sandbox.
+
+Directive plan
+Remove Replit-specific codepaths
+– No Replit Auth. Use your own session/JWT middleware.
+– No Replit DB/filesystems. Target Postgres + GCS/S3 only.
+– No Replit “Deployments” or secrets store. Rely on .env locally and /etc/moduvo/env on server.
+
+Normalize runtime
+– Node API: Express on PORT=8080.
+– Client: Vite build to client/dist. Serve via Express in dev; via Nginx in prod.
+– Email: Nodemailer -> Migadu (STARTTLS 587). transporter.verify() must not crash boot.
+– CORS, helmet, compression, rate limiting enabled by env, not host.
+
+Single source of config
+– .env.production.example with: NODE_ENV, PORT, DATABASE_URL, CORS_ORIGIN, JWT_SECRET, SESSION_SECRET, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL, GCS_BUCKET, GOOGLE_APPLICATION_CREDENTIALS, LOG_LEVEL.
+– No host-specific defaults in code.
+
+Persistence
+– Postgres (Neon/Supabase for staging; Contabo VM Postgres for prod).
+– Drizzle migrations required at boot or via CI step.
+– Bucket: moduvo-prod-assets (public objects or signed URLs).
+
+Security baseline
+– Helmet (contentSecurityPolicy:false until you whitelist GLB/USDZ/CDN).
+– Rate limit 600 / 15m / IP.
+– CORS only https://moduvo.to, https://www.moduvo.to.
+– RBAC guard on all /api/admin/*.
+
+Build + start contracts
+– npm run build → client/dist + server/dist.
+– npm start → node server/dist/index.js.
+– Health: GET /healthz -> 200 "ok".
+
+Production artifacts (checked into repo)
+– nginx/moduvo.conf (reverse-proxy 443→8080, security headers, ACME path).
+– systemd/moduvo.service (WorkingDirectory /opt/moduvo, ExecStart node server/dist/index.js, env file /etc/moduvo/env).
+– logrotate/moduvo (daily, 14 rotates).
+– production-deployment.md, DEPLOYMENT_CHECKLIST.md.
+
+Contabo provisioning (once)
+– ufw allow OpenSSH && ufw allow "Nginx Full" && ufw enable.
+– Install Node 20, Nginx, Certbot, Postgres.
+– Create DB/user, run migrations, restore seed.
+– certbot --nginx -d moduvo.to -d www.moduvo.to.
+
+Domain + email
+– A/AAAA → Contabo IP for @ and www.
+– Migadu: MX, SPF (include:spf.migadu.com), DKIM CNAMEs, DMARC (p=quarantine).
+– FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>".
+
+Backups + monitoring
+– Nightly pg_dump -Fc cron.
+– Uptime probe on /healthz.
+– Logrotate active; journalctl alerts wired later if desired.
+
+Sales readiness
+– Deterministic pricing table, min order, delivery zones, installation fees.
+– Inline form validation mirrored server-side.
+– Analytics + SEO tags, prominent CTA, confirmation emails, CRM export.
+
+Replit usage only for dev
+– Run dev server, iterate UI, run validator script.
+– Do not rely on Replit services at runtime.
+– Push to GitHub; deploy from GitHub to Contabo.
+
+Execute this plan; nothing else in Replit is required beyond local development and preview.

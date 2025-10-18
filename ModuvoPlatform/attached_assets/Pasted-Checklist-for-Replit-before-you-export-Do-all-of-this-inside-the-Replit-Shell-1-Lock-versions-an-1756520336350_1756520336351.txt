@@ -1,0 +1,88 @@
+Checklist for Replit before you export. Do all of this inside the Replit Shell.
+
+1. Lock versions and build
+
+```
+npm ci
+npm run build
+```
+
+2. Vite output sanity
+
+* `client/vite.config.ts`: `base: "/"`, `build.outDir: "dist"`.
+* `client/dist/index.html` exists after build.
+
+3. Kill Replit fingerprints
+
+* In all client code, remove any absolute `https://*.repl.co` URLs. Use relative `/api/...`.
+* No client-side secrets. Only expose vars with `VITE_*`. Everything else stays server-side.
+
+4. Routes and SPA
+
+* Client uses React Router. Ensure links are relative. Your Nginx will do `try_files $uri /index.html;`.
+
+5. AR assets
+
+* Place `.glb` and `.usdz` under `client/public/assets/models/`.
+* In `client/index.html` add:
+
+```
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+```
+
+* Ensure product JSON points to `/assets/models/…`.
+
+6. Email and envs
+
+* `server/email.ts` uses nodemailer. Confirm it reads `SMTP_HOST/PORT/USER/PASS` from `process.env`.
+* Create/update `.env.production.example` with all required server vars:
+
+  * `PORT=8000`
+  * `SMTP_HOST=...`
+  * `SMTP_PORT=587`
+  * `SMTP_USER=...`
+  * `SMTP_PASS=...`
+  * add DB/object storage if used
+* Do NOT reference Replit “Secrets” at runtime in client code.
+
+7. Server entry and port
+
+* Server listens on `process.env.PORT || 8000`.
+* Export a **compiled** server:
+
+  * If TypeScript: `npm run build` must emit `server/dist/index.js` (or similar). No ts-node in prod.
+
+8. API paths
+
+* All API endpoints start with `/api/…`. No hardcoded hosts. CORS disabled or set to your domain only.
+
+9. Health endpoint (simple but useful)
+
+* Add `GET /api/health` → `200 OK {status:"ok"}`.
+
+10. Produce a clean ZIP for Contabo
+
+```
+# from repo root
+zip -r /home/runner/site.zip \
+  client/dist \
+  server \
+  package.json package-lock.json \
+  .env.production.example \
+  -x "**/node_modules/*" "**/.git/*" ".replit" "replit.nix"
+```
+
+Download `/home/runner/site.zip`.
+
+11. What you tell Replit (if you must say anything)
+
+* Nothing. You’re not hosting there. You’re only using it to build and export.
+
+12. After export (on Contabo, not Replit)
+
+* `npm ci` in `/opt/moduvo/server`.
+* Run compiled server with PM2 on 8000.
+* Nginx: `root /opt/moduvo/client/dist;` and proxy `/api/` → `127.0.0.1:8000`.
+* Certbot for `moduvo.to` after DNS points to your IP.
+
+Stop here.

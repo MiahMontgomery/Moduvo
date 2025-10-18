@@ -1,0 +1,120 @@
+Failures still present.
+
+Email transport API incorrect
+
+Your server/email.ts still calls nodemailer.createTransporter. This is invalid.
+
+Patch:
+
+ts
+Copy
+Edit
+import nodemailer from "nodemailer";
+let transporter: nodemailer.Transporter | null = null;
+
+export async function createEmailTransporter() {
+  if (transporter) return transporter;
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST!,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+  });
+  try { await transporter.verify(); } catch { /* log-only; do not throw on boot */ }
+  return transporter;
+}
+
+export async function sendQuoteEmail(to: string, subject: string, html: string) {
+  const t = await createEmailTransporter();
+  return t.sendMail({ from: process.env.FROM_EMAIL!, to, subject, html });
+}
+Paste raw proof:
+
+bash
+Copy
+Edit
+sed -n '1,120p' server/email.ts
+Git tag + archive + shasum not provided
+
+Run and paste:
+
+pgsql
+Copy
+Edit
+git add -A
+git commit -m "prod gate finalize"
+git rev-parse --short HEAD
+git tag -a prod-ready -m "prod gate"
+git rev-parse --short prod-ready
+git status --porcelain
+git archive -o moduvo_prod_ready_${USER}_$(date +%F).tar.gz prod-ready
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+VERIFY_LOCAL.log not pasted fully
+
+Paste entire file:
+
+bash
+Copy
+Edit
+sed -n '1,400p' VERIFY_LOCAL.log
+sed -n '401,800p' VERIFY_LOCAL.log
+sed -n '801,1200p' VERIFY_LOCAL.log
+SPA static serving confirmation missing
+
+Paste raw content to verify correct path:
+
+pgsql
+Copy
+Edit
+sed -n '1,200p' server/index.ts
+Required lines: const clientDir = path.resolve(__dirname, "../../client/dist");, app.use(express.static(clientDir));, app.get("*", … sendFile(path.join(clientDir, "index.html"))).
+
+Health and root headers on 8080 need raw outputs
+
+Paste:
+
+nginx
+Copy
+Edit
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+curl -sI http://127.0.0.1:8080 | sed -n '1,30p'
+GCS asset reachability not proven
+
+Upload two public test objects sample.glb and sample.usdz to ${GCS_BUCKET} (public-read or signed URL).
+
+Paste:
+
+bash
+Copy
+Edit
+echo $GCS_BUCKET
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.glb | sed -n '1,12p'
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.usdz | sed -n '1,12p'
+Rate-limit header sample on 8080 missing
+
+Paste:
+
+nginx
+Copy
+Edit
+seq 1 20 | xargs -I{} curl -sI http://127.0.0.1:8080/healthz | grep -E "HTTP/|X-RateLimit-" -m 2
+Pricing file full content not pasted
+
+Paste:
+
+bash
+Copy
+Edit
+sed -n '1,200p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.* | sed -n '1,20p'
+Database migrations acceptable; keep your psql proofs but re-run after the next build to ensure stability
+
+Paste again after fixes:
+
+nginx
+Copy
+Edit
+psql "$DATABASE_URL" -c "select now(), current_user;"
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select count(*) from quotes;" || true
+Execute patches, then run and paste the outputs exactly, nothing else.

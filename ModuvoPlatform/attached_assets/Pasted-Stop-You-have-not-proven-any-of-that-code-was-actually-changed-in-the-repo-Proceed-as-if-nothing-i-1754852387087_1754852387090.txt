@@ -1,0 +1,353 @@
+Stop. You have not proven any of that code was actually changed in the repo. Proceed as if nothing is finished and ship a production‑ready, Contabo/Migadu/moduvo.to deployment from first principles.
+
+# 0) Repository sanity checks
+
+Run these to confirm required files and endpoints exist. Fix anything that fails.
+
+```bash
+grep -RIn "calculateQuote" server || true
+grep -RIn "admin" server | grep "TODO" || true
+grep -RIn "/api/auth/user" server client || true
+grep -RIn "CORS" server/index.ts || true
+grep -RIn "helmet" server/index.ts || true
+grep -RIn "rateLimit" server/index.ts || true
+grep -RIn "process.env.SMTP_" -n server || true
+grep -RIn "GOOGLE_APPLICATION_CREDENTIALS" -n server || true
+grep -RIn "GCS_BUCKET" -n server || true
+```
+
+# 1) Production environment variables
+
+Create `.env.production` exactly like this. Do not commit.
+
+```env
+NODE_ENV=production
+PORT=8080
+
+# PostgreSQL
+DATABASE_URL=postgresql://moduvo:STRONG_PASSWORD@127.0.0.1:5432/moduvo
+
+# CORS
+CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to
+
+# Session/JWT
+JWT_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+SESSION_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+
+# Email (Migadu)
+SMTP_HOST=smtp.migadu.com
+SMTP_PORT=587
+SMTP_USER=quotes@moduvo.to
+SMTP_PASS=REPLACE_SECURE_APP_PASSWORD
+FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>"
+
+# Google Cloud Storage
+GCS_BUCKET=moduvo-prod-assets
+GOOGLE_APPLICATION_CREDENTIALS=/etc/moduvo/gcp-service-account.json
+
+# Logging
+LOG_LEVEL=info
+```
+
+# 2) System packages on Contabo (Ubuntu 22.04)
+
+```bash
+sudo apt update && sudo apt -y install nginx ufw certbot python3-certbot-nginx \
+  postgresql postgresql-contrib \
+  nodejs npm # or install Node 20 via nodesource if needed
+sudo ufw allow OpenSSH
+sudo ufw allow "Nginx Full"
+sudo ufw enable
+```
+
+# 3) PostgreSQL database
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE moduvo WITH LOGIN PASSWORD 'STRONG_PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE moduvo OWNER moduvo;"
+sudo -u postgres psql -d moduvo -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+```
+
+Run migrations and seed:
+
+```bash
+npm ci
+npm run db:migrate # your drizzle migration script
+npm run db:seed    # if present; otherwise hit your /api/init-data once with admin token
+```
+
+# 4) Build artifacts
+
+Ensure Vite builds client to `client/dist` and server serves static.
+
+```bash
+npm run build   # builds client and server
+```
+
+# 5) Production server hardening (Node API)
+
+Add security middleware if missing.
+
+```ts
+// server/index.ts
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import cors from "cors";
+
+app.use(helmet({
+  contentSecurityPolicy: false, // keep false unless CSP is configured for GLB/USDZ/CDN
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
+app.use(cors({ origin: process.env.CORS_ORIGIN?.split(",") ?? [], credentials: true }));
+app.use(rateLimit({ windowMs: 15*60*1000, max: 600 }));
+```
+
+Expose a health check:
+
+```ts
+app.get("/healthz", (_req, res) => res.status(200).send("ok"));
+```
+
+# 6) Admin RBAC guard
+
+Create a reusable guard and apply to all `/api/admin/*`.
+
+```ts
+// server/middleware/auth.ts
+export function requireAuth(req,res,next){
+  if(!req.user) return res.status(401).json({error:"unauthenticated"});
+  next();
+}
+export function requireAdmin(req,res,next){
+  if(!req.user || !["admin","staff"].includes(req.user.role)) {
+    return res.status(403).json({error:"forbidden"});
+  }
+  next();
+}
+
+// server/routes.ts (example)
+router.get("/api/admin/quotes", requireAuth, requireAdmin, async (req,res)=>{ /*...*/ });
+```
+
+# 7) Migadu email correctness
+
+Use STARTTLS 587. Do not hardcode from address.
+
+```ts
+// server/email.ts
+import nodemailer from "nodemailer";
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST!,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: false,
+  auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+});
+await transporter.verify(); // run at boot, log result
+```
+
+DNS for `moduvo.to` (set at registrar):
+
+* MX: `aspmx.migadu.com` priority 10
+* MX: `alt.aspmx.migadu.com` priority 20
+* SPF (TXT at root): `v=spf1 include:spf.migadu.com ~all`
+* DKIM: create CNAMEs from Migadu admin (per-domain keys)
+* DMARC (TXT `_dmarc.moduvo.to`): `v=DMARC1; p=quarantine; rua=mailto:dmarc@moduvo.to; ruf=mailto:dmarc@moduvo.to; adkim=s; aspf=s; fo=1`
+
+# 8) Nginx reverse proxy
+
+`/etc/nginx/sites-available/moduvo.conf`
+
+```nginx
+server {
+  listen 80;
+  server_name moduvo.to www.moduvo.to;
+  location /.well-known/acme-challenge/ { root /var/www/html; }
+  location / { return 301 https://moduvo.to$request_uri; }
+}
+
+server {
+  listen 443 ssl http2;
+  server_name moduvo.to www.moduvo.to;
+
+  ssl_certificate /etc/letsencrypt/live/moduvo.to/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/moduvo.to/privkey.pem;
+
+  # Security headers
+  add_header X-Frame-Options DENY;
+  add_header X-Content-Type-Options nosniff;
+  add_header Referrer-Policy strict-origin-when-cross-origin;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()";
+
+  client_max_body_size 30m;
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120;
+  }
+
+  location /healthz {
+    proxy_pass http://127.0.0.1:8080/healthz;
+  }
+
+  # serve static client if API also serves SPA
+  location /assets/ { alias /opt/moduvo/client/dist/assets/; }
+}
+```
+
+Enable and obtain certificates:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/moduvo.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d moduvo.to -d www.moduvo.to --redirect --agree-tos -m admin@moduvo.to
+```
+
+# 9) systemd service
+
+`/etc/systemd/system/moduvo.service`
+
+```ini
+[Unit]
+Description=Moduvo Platform
+After=network.target
+
+[Service]
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/moduvo/env
+WorkingDirectory=/opt/moduvo
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=always
+User=www-data
+Group=www-data
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create env file:
+
+```bash
+sudo mkdir -p /etc/moduvo
+sudo cp .env.production /etc/moduvo/env
+sudo chown www-data:www-data /etc/moduvo/env
+```
+
+Start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now moduvo
+journalctl -u moduvo -f
+```
+
+# 10) GCS access for assets
+
+Place service account JSON at `/etc/moduvo/gcp-service-account.json` and grant Storage Object Admin to the bucket. Ensure server uses signed URLs or public-read objects for GLB/USDZ. Validate upload pipeline.
+
+# 11) Front‑end build and static hosting
+
+Ensure Vite outputs to `client/dist`. If the Node server serves the SPA:
+
+```ts
+// server/index.ts
+app.use(express.static(path.join(__dirname, "../../client/dist")));
+app.get("*", (_req,res)=>res.sendFile(path.join(__dirname,"../../client/dist/index.html")));
+```
+
+# 12) Form validation and UX
+
+Enforce zod schemas for:
+
+* email (RFC 5322), phone (E.164), Canadian postal code `^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d$`
+* required: name, install address, preferred contact, consent checkbox for privacy
+
+Server must re‑validate identical rules before persisting.
+
+# 13) Quote pricing rules
+
+Implement deterministic pricing table (do not ship “magic numbers”):
+
+```ts
+const LABOUR_HOURS = { shelf:0.25, drawer:0.5, door:0.4, rail:0.15 };
+const LABOUR_RATE = 85; // CAD
+const FINISH_MULTIPLIER = { white:1.0, matte:1.08, wood:1.12, glass:1.18 };
+const DELIVERY_ZONES = {
+  TORONTO: { fee: 75 },
+  GTA: { fee: 125 },
+  ONTARIO: { fee: 195 },
+  OOP: { fee: 295 }
+};
+const MIN_ORDER = 1200;
+```
+
+Return transparent line items and totals; store raw JSON in `revenue_events` or `quotes` table.
+
+# 14) Admin bootstrap
+
+One‑time script to create the first admin.
+
+```bash
+node scripts/create-admin.js --email admin@moduvo.to --password '…'
+```
+
+Guard all `/api/admin/*` and admin UI routes behind `requireAdmin`.
+
+# 15) Logging and rotation
+
+Log to stdout and syslog. Rotate Nginx and app logs.
+`/etc/logrotate.d/moduvo`
+
+```conf
+/var/log/nginx/*.log /var/log/moduvo/*.log {
+  daily
+  rotate 14
+  compress
+  missingok
+  notifempty
+  create 0640 www-data adm
+  sharedscripts
+  postrotate
+    systemctl reload nginx >/dev/null 2>&1 || true
+  endscript
+}
+```
+
+# 16) Backups
+
+Nightly PostgreSQL dump and off‑box copy.
+
+```bash
+sudo -u postgres crontab -e
+# add:
+0 3 * * * pg_dump -Fc moduvo | gzip > /var/backups/moduvo_$(date +\%F).dump.gz
+```
+
+# 17) Monitoring
+
+* Uptime probe: `https://moduvo.to/healthz` every 60s
+* Error alerts: tail `journalctl -u moduvo -f` to a filebeat/Vector target if available
+
+# 18) DNS summary for moduvo.to
+
+* A/AAAA: point `@` and `www` to Contabo IP
+* MX: Migadu (`aspmx.migadu.com` prio 10; `alt.aspmx.migadu.com` prio 20)
+* TXT: SPF `v=spf1 include:spf.migadu.com ~all`
+* TXT: DMARC `_dmarc` record as above
+* CNAME: DKIM keys provided by Migadu panel
+
+# 19) Final validation
+
+```bash
+curl -I https://moduvo.to
+curl -s https://moduvo.to/healthz
+sudo nginx -t
+journalctl -u moduvo -n 200 --no-pager
+psql $DATABASE_URL -c "select count(*) from quotes;"
+```
+
+Execute the checklist top‑to‑bottom. Ship when all commands pass without errors.

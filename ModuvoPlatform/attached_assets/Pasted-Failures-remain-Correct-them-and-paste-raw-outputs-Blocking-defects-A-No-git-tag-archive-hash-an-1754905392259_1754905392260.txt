@@ -1,0 +1,189 @@
+Failures remain. Correct them and paste raw outputs.
+
+Blocking defects
+A: No git tag/archive/hash and no shasum.
+
+B: VERIFY_LOCAL.log not pasted in full.
+
+E: No raw curl -sI /healthz header output.
+
+F: No raw server/email.ts content; confirm nodemailer.createTransport, not createTransporter.
+
+G: Wrong filename previously; .env.production.example now present—keep.
+
+H: DIST_MISSING. Your Vite build outputs dist/public/*; Express is not serving client/dist.
+
+I: OK.
+
+J: No DB connectivity or migration proof.
+
+K: Rate-limit proof used port 5000 earlier; normalize to 8080.
+
+L: No GCS asset HEAD proof.
+
+D: Admin routes fixed; /api/auth/user still uses isAuthenticated—acceptable for now.
+
+Required code patches
+Serve SPA from client/dist and enable CORS/compression
+ts
+Copy
+Edit
+// server/index.ts
+import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import cors from "cors";
+import compression from "compression";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(helmet({ contentSecurityPolicy:false, crossOriginResourcePolicy:{ policy:"cross-origin" } }));
+app.use(cors({ origin:(process.env.CORS_ORIGIN??"").split(","), credentials:true }));
+app.use(compression());
+app.use(rateLimit({ windowMs: 15*60*1000, max: 600 }));
+
+const clientDir = path.resolve(__dirname, "../../client/dist");
+app.use(express.static(clientDir));
+
+app.get("/healthz", (_req,res) => res.status(200).send("ok"));
+app.get("*", (_req,res) => res.sendFile(path.join(clientDir, "index.html")));
+
+app.listen(process.env.PORT || 8080);
+Force client build to client/dist
+ts
+Copy
+Edit
+// client/vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+export default defineConfig({
+  plugins: [react()],
+  build: { outDir: "dist", emptyOutDir: true }
+});
+Nodemailer transport (no invalid API)
+ts
+Copy
+Edit
+// server/email.ts
+import nodemailer from "nodemailer";
+let transporter: nodemailer.Transporter | null = null;
+
+export async function createEmailTransporter() {
+  if (transporter) return transporter;
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST!,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+  });
+  await transporter.verify();
+  return transporter;
+}
+
+export async function sendQuoteEmail(to: string, subject: string, html: string) {
+  const t = await createEmailTransporter();
+  return t.sendMail({ from: process.env.FROM_EMAIL!, to, subject, html });
+}
+Package scripts
+json
+Copy
+Edit
+// package.json
+"scripts": {
+  "build:client": "vite build --config client/vite.config.ts",
+  "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server/dist",
+  "build": "npm run build:client && npm run build:server",
+  "typecheck": "tsc -p . --noEmit"
+}
+Commands to run and paste verbatim
+A) Commit, tag, archive, shasum
+pgsql
+Copy
+Edit
+git add -A
+git commit -m "prod: SPA static from client/dist, cors+compression, nodemailer transport"
+git rev-parse --short HEAD
+git tag -a prod-ready -m "prod gate"
+git rev-parse --short prod-ready
+git status --porcelain
+git archive -o moduvo_prod_ready_${USER}_$(date +%F).tar.gz prod-ready
+shasum -a 256 moduvo_prod_ready_*.tar.gz
+B) Full local verification log
+bash
+Copy
+Edit
+chmod +x scripts/validate.sh
+./scripts/validate.sh | tee VERIFY_LOCAL.log
+Paste entire VERIFY_LOCAL.log.
+
+C) Pricing proof
+bash
+Copy
+Edit
+sed -n '1,160p' server/pricing.ts
+grep -RIn "calculateQuote" server/routes.* server/pricing.* | sed -n '1,20p'
+D) RBAC proof on 8080
+bash
+Copy
+Edit
+sed -n '1,200p' server/middleware/auth.ts
+grep -RIn "/api/admin" server/routes.* | sed -n '1,60p'
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+E) Security middleware headers (raw)
+bash
+Copy
+Edit
+sed -n '1,200p' server/index.ts
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+F) Migadu SMTP wiring (raw)
+pgsql
+Copy
+Edit
+sed -n '1,200p' server/email.ts
+grep -RIn "transporter.verify" server
+G) Environment
+bash
+Copy
+Edit
+cat .env.production.example
+H) Static build + SPA existence and root response
+bash
+Copy
+Edit
+npm run build
+test -d client/dist && echo DIST_OK
+curl -sI http://127.0.0.1:8080 | sed -n '1,12p'
+I) Nginx/systemd/logrotate
+bash
+Copy
+Edit
+sed -n '1,200p' nginx/moduvo.conf
+sed -n '1,200p' systemd/moduvo.service
+sed -n '1,200p' logrotate/moduvo
+J) Database
+nginx
+Copy
+Edit
+psql "$DATABASE_URL" -c "select now(), current_user;"
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select count(*) from quotes;" || true
+K) Rate-limit on 8080
+bash
+Copy
+Edit
+seq 1 700 | xargs -I{} -n1 -P16 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/healthz | sort | uniq -c
+L) GCS assets
+bash
+Copy
+Edit
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.glb | sed -n '1,12p'
+curl -sI https://storage.googleapis.com/${GCS_BUCKET}/sample.usdz | sed -n '1,12p'
+M) Change trail
+nginx
+Copy
+Edit
+printf "\n== CHANGES ==\n"; git log --oneline -n 3; git diff --name-status HEAD~1..HEAD
+Paste raw outputs only.

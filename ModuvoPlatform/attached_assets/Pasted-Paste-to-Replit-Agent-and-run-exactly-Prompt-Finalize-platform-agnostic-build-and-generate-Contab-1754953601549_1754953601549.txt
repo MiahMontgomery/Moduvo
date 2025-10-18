@@ -1,0 +1,164 @@
+Paste to Replit Agent and run exactly.
+
+Prompt: Finalize platform-agnostic build and generate Contabo handoff pack
+
+Objective
+Produce a self-contained production handoff package for Contabo: Node/Express on 8080, Vite client in client/dist, RBAC enforced, deterministic pricing active, Migadu SMTP non-fatal at boot, and a validator log proving health on /healthz. Output a single tar.gz with build artefacts + configs + docs.
+
+Edits
+
+package.json
+
+json
+Copy
+Edit
+{
+  "scripts": {
+    "build:client": "vite build --config client/vite.config.ts",
+    "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server/dist",
+    "build": "npm run build:client && npm run build:server",
+    "start": "NODE_ENV=production node server/dist/index.js",
+    "typecheck": "tsc -p . --noEmit"
+  }
+}
+client/vite.config.ts
+
+ts
+Copy
+Edit
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+export default defineConfig({ plugins: [react()], build: { outDir: "dist", emptyOutDir: true } });
+server/index.ts (ensure these lines exist once)
+
+ts
+Copy
+Edit
+const clientDir = path.resolve(__dirname, "../../client/dist");
+app.use(express.static(clientDir));
+app.get("/healthz", (_req,res)=>res.status(200).send("ok"));
+// …register routes here…
+app.get("*", (_req,res)=>res.sendFile(path.join(clientDir, "index.html")));
+const port = parseInt(process.env.PORT || "8080", 10);
+server.listen({ port, host: "0.0.0.0", reusePort: true }, ()=>log(`serving on port ${port}`));
+server/email.ts (non-fatal verify)
+
+ts
+Copy
+Edit
+import nodemailer from "nodemailer";
+let transporter: nodemailer.Transporter | null = null;
+export async function createEmailTransporter() {
+  if (transporter) return transporter;
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST!,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! }
+  });
+  try { await transporter.verify(); } catch { /* log-only */ }
+  return transporter;
+}
+export async function sendQuoteEmail(to: string, subject: string, html: string) {
+  const t = await createEmailTransporter();
+  return t.sendMail({ from: process.env.FROM_EMAIL!, to, subject, html });
+}
+server/routes.ts
+Replace any isAuthenticated on admin endpoints with requireAuth, requireAdmin. /api/auth/user must return 401 if !req.user, else { id,email,role }.
+
+.env.production.example (ensure present)
+
+ini
+Copy
+Edit
+NODE_ENV=production
+PORT=8080
+DATABASE_URL=postgresql://moduvo:STRONG_PASSWORD@127.0.0.1:5432/moduvo
+CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to
+JWT_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+SESSION_SECRET=REPLACE_WITH_64_CHAR_RANDOM
+SMTP_HOST=smtp.migadu.com
+SMTP_PORT=587
+SMTP_USER=quotes@moduvo.to
+SMTP_PASS=REPLACE_SECURE_APP_PASSWORD
+FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>"
+GCS_BUCKET=moduvo-prod-assets
+GOOGLE_APPLICATION_CREDENTIALS=/etc/moduvo/gcp-service-account.json
+LOG_LEVEL=info
+Validator
+Create scripts/validate.sh:
+
+bash
+Copy
+Edit
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Grep =="
+grep -RIn "helmet" server/index.ts || true
+grep -RIn "cors(" server/index.ts || true
+grep -RIn "compression" server/index.ts || true
+grep -RIn "rateLimit" server/index.ts || true
+grep -RIn "requireAdmin" server || true
+grep -RIn "/api/admin" server/routes.* || true
+grep -RIn "calculateQuote" server/routes.* server/pricing.* || true
+grep -RIn "smtp.migadu.com" -n server || true
+
+echo "== Typecheck & build =="
+npm run typecheck || true
+npm run build
+
+echo "== Start app =="
+PORT=8080 NODE_ENV=production LOG_LEVEL=info \
+CORS_ORIGIN=https://moduvo.to,https://www.moduvo.to \
+JWT_SECRET=devdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdev \
+SESSION_SECRET=devdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdevdev \
+DATABASE_URL=${DATABASE_URL:-postgresql://moduvo:password@127.0.0.1:5432/moduvo} \
+SMTP_HOST=smtp.migadu.com SMTP_PORT=587 SMTP_USER=quotes@moduvo.to SMTP_PASS=xxx \
+FROM_EMAIL="Moduvo Quotes <quotes@moduvo.to>" \
+GCS_BUCKET=${GCS_BUCKET:-} GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/etc/moduvo/gcp.json} \
+node server/dist/index.js > /tmp/moduvo.out 2>&1 &
+
+APP_PID=$!
+
+echo "== Wait for healthz =="
+for i in {1..25}; do
+  if curl -sf http://127.0.0.1:8080/healthz >/dev/null; then echo healthy; break; fi
+  sleep 1
+done
+curl -sf http://127.0.0.1:8080/healthz || { echo 'Health check failed'; tail -n 150 /tmp/moduvo.out; exit 1; }
+
+echo "== Headers (health) =="
+curl -sI http://127.0.0.1:8080/healthz | sed -n '1,30p'
+
+echo "== RBAC negative =="
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/admin/quotes
+
+echo "== SPA =="
+test -d client/dist && echo DIST_OK && ls -la client/dist | sed -n '1,80p'
+
+echo "== Pricing fingerprint =="
+sed -n '1,120p' server/pricing.ts | sed -n '1,40p'
+
+echo "== Stop =="
+kill $APP_PID || true
+wait $APP_PID 2>/dev/null || true
+echo OK
+Make executable: chmod +x scripts/validate.sh.
+
+Build, validate, package
+Run:
+
+bash
+Copy
+Edit
+npm ci
+./scripts/validate.sh | tee VERIFY_LOCAL.log
+mkdir -p release
+cp -r client/dist server/dist nginx/moduvo.conf systemd/moduvo.service logrotate/moduvo .env.production.example production-deployment.md DEPLOYMENT_CHECKLIST.md VERIFY_LOCAL.log release/ 2>/dev/null || true
+tar -czf moduvo_handoff_$(date +%F).tar.gz -C release .
+Deliverables
+
+VERIFY_LOCAL.log proving /healthz 200 on port 8080 and RBAC 401/403 on /api/admin/quotes.
+
+moduvo_handoff_YYYY-MM-DD.tar.gz containing built artefacts and deployment files.
